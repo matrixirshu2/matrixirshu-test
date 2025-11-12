@@ -1,26 +1,45 @@
-import { NextResponse } from 'next/server';
-import { generateCode, saveOTP } from '@/lib/otp';
-import { sendOTP } from '@/lib/mailer';
-import { createTablesIfNotExists, ensureUser, getUserByEmail } from '@/lib/db';
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { prisma } from '@/src/lib/prisma'
+import { Resend } from 'resend'
 
-export async function POST(req) {
+const resend = new Resend(process.env.RESEND_API_KEY)
+const FROM = process.env.FROM_EMAIL || 'Your App <onboarding@resend.dev>'
+
+const Body = z.object({ email: z.string().email() })
+
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
+export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
-    if (!email || !String(email).includes('@')) {
-      return NextResponse.json({ ok: false, error: 'Valid email required' }, { status: 400 });
+    const { email } = Body.parse(await req.json())
+
+    let user = await prisma.user.findUnique({ where: { email } })
+    if (!user) {
+      user = await prisma.user.create({ data: { email } })
     }
-    await createTablesIfNotExists();
-    const user = await getUserByEmail(email);
-    if (user?.is_disabled) {
-      return NextResponse.json({ ok: false, error: 'Account disabled by admin' }, { status: 403 });
+    if (user.isBlocked) {
+      return NextResponse.json({ ok: false, error: 'User is blocked' }, { status: 403 })
     }
-    await ensureUser(email);
-    const code = generateCode(6);
-    await saveOTP(email, code);
-    await sendOTP(email, code);
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: e.message || 'Server error' }, { status: 500 });
+
+    const code = generateCode()
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+    await prisma.oTP.create({
+      data: { userId: user.id, code, expiresAt }
+    })
+
+    await resend.emails.send({
+      from: FROM,
+      to: email,
+      subject: 'Your OTP Code',
+      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message || 'Failed' }, { status: 400 })
   }
 }

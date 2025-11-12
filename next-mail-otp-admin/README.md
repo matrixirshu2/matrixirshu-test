@@ -1,71 +1,64 @@
-# Next.js Email OTP Auth + Admin Panel (Vercel-ready)
+# Next.js Email OTP + Admin (Resend + Prisma + Postgres)
 
-**What you get**
-- Email login with **6-digit OTP** (expires in 5 minutes)
-- **Admin Panel** to list users, set role (user/admin), disable/enable, and delete
-- JWT cookie sessions
-- **Vercel Postgres** for data, **Resend** for sending email
-- Ready for **Deploy on Vercel** and connect to **GitHub**
+This starter gives you:
+- Email OTP login via Resend
+- JWT cookie session
+- Prisma + Postgres for users, OTPs, sessions
+- Simple Admin panel to list users, block/unblock, toggle admin
+- Works on Vercel (App Router + route handlers)
 
-## 1) Local setup
-1. Install Node.js (LTS).
-2. Create `.env.local`:
+## 1) Configure ENV
+
+Create `.env.local` (we already created one with your key):
+
 ```
-JWT_SECRET=replace_with_random_long_string
-RESEND_API_KEY=your_resend_api_key
+RESEND_API_KEY=... # provided
 FROM_EMAIL=Your App <onboarding@resend.dev>
 POSTGRES_URL=postgres://USER:PASSWORD@HOST:PORT/DB
-POSTGRES_PRISMA_URL=${POSTGRES_URL}
-POSTGRES_URL_NON_POOLING=${POSTGRES_URL}
+JWT_SECRET=change_me
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
-3. Install & run:
-```
+
+> **Vercel:** Add the same variables in **Project → Settings → Environment Variables**.
+
+## 2) Install & DB
+
+```bash
 npm install
+npm run prisma:generate
+# set POSTGRES_URL first then
+npm run prisma:migrate
+```
+
+## 3) Run
+
+```bash
 npm run dev
 ```
-4. Create tables (one-time):
-```
-curl -X POST http://localhost:3000/api/setup
-```
-5. Open http://localhost:3000/login, enter email, then the code you receive.
 
-**Promote yourself to admin (first time):**
-```
-UPDATE users SET role='admin' WHERE email='you@example.com';
-```
+Open http://localhost:3000
 
-## 2) Deploy on Vercel (GitHub)
-- Push to a new GitHub repo, then on Vercel: New Project → Import from GitHub.
-- Provision **Vercel Postgres** (Storage tab).
-- Add env vars: `JWT_SECRET`, `RESEND_API_KEY`, `FROM_EMAIL`. (Postgres vars auto-added when attached.)
-- Deploy, then run POST `https://<your-url>/api/setup` once.
+## 4) Admin Access
 
-## 3) How it works
-- `/api/auth/request-otp` → generate 6-digit code, store **hashed** with expiry, email it.
-- `/api/auth/verify-otp` → verify code, set **JWT cookie** containing `email` + `role`.
-- `/(protected)/admin` → manage users (role/disable/delete).
+After you sign in once, promote your user to ADMIN in the database (or via API):
 
-**Tables**
-```
-CREATE TABLE IF NOT EXISTS users (
-  id SERIAL PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user',
-  is_disabled BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS otps (
-  id SERIAL PRIMARY KEY,
-  email TEXT NOT NULL,
-  code_hash TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  used BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+```sql
+-- In SQL client
+UPDATE "User" SET role='ADMIN' WHERE email='your@email.com';
 ```
 
-## 4) Notes
-- Use a verified sender in Resend.
-- Add rate-limits to request-otp in production.
-- To add GitHub OAuth later, integrate **Auth.js** with a GitHub provider.
+Or call the toggle admin endpoint once you've set an admin manually.
+
+## 5) Common 404 Fixes (Vercel)
+
+- Ensure your API routes live under `app/api/.../route.ts` (they do).
+- Ensure `next.config.mjs` has `output: 'standalone'` (done).
+- Make sure build succeeds and Prisma is included at build time (it is).
+- Set your ENV in Vercel for **Production** and **Preview** and redeploy.
+- If you see `404: NOT_FOUND` on your API, check project base path; your fetches are relative (`/api/...`), which is correct on Vercel.
+
+## 6) Security
+
+- Use a very long `JWT_SECRET` in production.
+- Set a verified sender in Resend and domain as needed.
+- Consider rate limiting OTP requests by IP/email.

@@ -1,31 +1,47 @@
-import Link from 'next/link';
-import { getSession } from '@/lib/auth';
+'use client'
+import { useState } from 'react'
 
-export default async function Home() {
-  const session = await getSession();
+export default function Home() {
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [step, setStep] = useState<'email'|'code'>('email')
+  const [msg, setMsg] = useState<string|undefined>()
+
+  async function requestOtp() {
+    setMsg('Sending code...')
+    const res = await fetch('/api/auth/request-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+    const data = await res.json()
+    if (data.ok) { setStep('code'); setMsg('Check your email for the code.') } else { setMsg(data.error || 'Failed') }
+  }
+
+  async function verify() {
+    setMsg('Verifying...')
+    const res = await fetch('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
+    const data = await res.json()
+    if (data.ok) {
+      setMsg('Signed in!')
+      if (data.role === 'ADMIN') window.location.href = '/admin'
+      else window.location.href = '/'
+    } else setMsg(data.error || 'Failed')
+  }
+
   return (
-    <div>
-      <div className="topbar">
-        <strong>Mail OTP Demo</strong>
+    <main>
+      <h1>Welcome</h1>
+      {step === 'email' ? (
         <div>
-          {session ? (
-            <form action="/api/auth/logout" method="post"><button>Logout</button></form>
-          ) : (
-            <Link href="/login">Login</Link>
-          )}
+          <label>Email</label><br/>
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={{padding:8,width:'100%'}}/>
+          <button onClick={requestOtp} style={{marginTop:12,padding:8}}>Send OTP</button>
         </div>
-      </div>
-      <div className="container">
-        <div className="card">
-          <h1>Welcome{session ? `, ${session.email}` : ''}!</h1>
-          {!session && <p className="badge">You are not logged in. <Link href="/login">Go to login</Link>.</p>}
-          {session && (
-            <ul>
-              <li><Link href="/(protected)/admin">Admin Panel</Link> (admins only)</li>
-            </ul>
-          )}
+      ) : (
+        <div>
+          <label>Enter Code</label><br/>
+          <input value={code} onChange={e=>setCode(e.target.value)} placeholder="6-digit code" style={{padding:8,width:'100%'}}/>
+          <button onClick={verify} style={{marginTop:12,padding:8}}>Verify</button>
         </div>
-      </div>
-    </div>
-  );
+      )}
+      {msg && <p style={{marginTop:12}}>{msg}</p>}
+    </main>
+  )
 }
